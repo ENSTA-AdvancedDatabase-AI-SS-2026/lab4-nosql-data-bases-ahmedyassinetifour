@@ -10,15 +10,14 @@ RETURN [n IN nodes(p) | n.prenom + " (" + n.universite + ")"] AS chemin,
        length(p) AS nb_intermediaires;
 
 
-// ─── 3.2 : Centralité de degré ────────────────────────────────────────────────
-// Créer la projection du graphe en mémoire
+// Project graph for GDS algorithms
 CALL gds.graph.project(
   'reseau_social',
   'Etudiant',
   'CONNAIT'
 );
 
-// TODO: Calculer et afficher le top 10 des étudiants les plus connectés
+// 3.2: Degree centrality - most connected students
 CALL gds.degree.stream('reseau_social')
 YIELD nodeId, score
 RETURN gds.util.asNode(nodeId).prenom AS etudiant,
@@ -28,26 +27,28 @@ ORDER BY score DESC
 LIMIT 10;
 
 
-// ─── 3.3 : Détection de communautés (Louvain) ────────────────────────────────
-// TODO: Exécuter l'algorithme de Louvain et afficher les communautés
+// 3.3: Community detection - Louvain algorithm
 CALL gds.louvain.stream('reseau_social')
 YIELD nodeId, communityId
-WITH communityId, collect(gds.util.asNode(nodeId).prenom) AS membres
+WITH communityId, collect(gds.util.asNode(nodeId)) AS membres
 RETURN communityId,
        size(membres) AS taille,
-       membres[0..5] AS exemple_membres
+       [m IN membres[0..5] | m.prenom] AS exemple_membres,
+       [DISTINCT m.universite | m.universite] AS universites
 ORDER BY taille DESC;
 
 
-// ─── 3.4 : Recommandation de contacts ────────────────────────────────────────
-// "Qui Ahmed devrait-il connaître ?" 
-// Critères : amis en commun + même cours + même filière
-
-// TODO: Écrire la requête de recommandation
-// Score = nb_amis_communs * 3 + nb_cours_communs * 2 + (meme_filiere ? 1 : 0)
+// 3.4: Contact recommendation - who Ahmed should connect with
 MATCH (moi:Etudiant {prenom: "Ahmed"})
-// TODO: Compléter la requête
-RETURN ??? AS suggestion, ??? AS score
+MATCH (suggestion:Etudiant)
+WHERE suggestion.id <> moi.id AND NOT (moi)-[:CONNAIT]-(suggestion)
+WITH moi, suggestion,
+  size([(moi)-[:CONNAIT]-(ami)-[:CONNAIT]-(suggestion) | 1]) AS amis_communs,
+  size([(moi)-[:SUIT]->(cours)<-[:SUIT]-(suggestion) | 1]) AS cours_communs,
+  CASE WHEN moi.filiere = suggestion.filiere THEN 1 ELSE 0 END AS meme_filiere
+RETURN suggestion.prenom + " (" + suggestion.universite + ")" AS suggestion,
+       (amis_communs * 3 + cours_communs * 2 + meme_filiere) AS score,
+       amis_communs, cours_communs
 ORDER BY score DESC
 LIMIT 5;
 
