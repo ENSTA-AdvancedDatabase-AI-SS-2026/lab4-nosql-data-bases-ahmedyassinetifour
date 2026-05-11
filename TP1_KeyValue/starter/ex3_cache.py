@@ -31,19 +31,29 @@ def get_product_cached(r, product_id: int, ttl: int = 600) -> Optional[dict]:
     4. Afficher si c'est un HIT ou MISS avec la latence
     """
     start = time.time()
-    
-    # TODO: Implémenter le pattern Cache-Aside
-    # Utiliser json.dumps/json.loads pour sérialiser
-    
+
+    cache_key = f"product_cache:{product_id}"
+    cached = r.get(cache_key)
+
+    if cached:
+        product = json.loads(cached)
+        elapsed = time.time() - start
+        print(f"CACHE HIT ({elapsed*1000:.1f}ms)")
+        return product
+
+    # Cache MISS - fetch from DB
+    product = slow_db_get_product(product_id)
+    if product:
+        r.setex(cache_key, ttl, json.dumps(product))
+
     elapsed = time.time() - start
-    # TODO: Afficher "CACHE HIT (Xms)" ou "CACHE MISS (Xms)"
-    pass
+    print(f"CACHE MISS ({elapsed*1000:.1f}ms)")
+    return product
 
 
 def invalidate_product_cache(r, product_id: int):
     """Supprimer le cache d'un produit (après mise à jour en DB)"""
-    # TODO
-    pass
+    r.delete(f"product_cache:{product_id}")
 
 
 def benchmark_cache(r, product_id: int, iterations: int = 20):
@@ -54,8 +64,30 @@ def benchmark_cache(r, product_id: int, iterations: int = 20):
     - Temps moyen cache MISS
     - Taux de cache hit (%)
     """
-    # TODO
-    pass
+    r.delete(f"product_cache:{product_id}")
+
+    hit_times = []
+    miss_times = []
+
+    for i in range(iterations):
+        start = time.time()
+        get_product_cached(r, product_id)
+        elapsed = (time.time() - start) * 1000
+
+        if i == 0:
+            miss_times.append(elapsed)
+        else:
+            hit_times.append(elapsed)
+
+    avg_hit = sum(hit_times) / len(hit_times) if hit_times else 0
+    avg_miss = sum(miss_times) / len(miss_times) if miss_times else 0
+    hit_rate = (len(hit_times) / iterations) * 100
+
+    print(f"\nBenchmark Results ({iterations} iterations):")
+    print(f"  Avg MISS time: {avg_miss:.2f}ms")
+    print(f"  Avg HIT time: {avg_hit:.2f}ms")
+    print(f"  Cache hit rate: {hit_rate:.1f}%")
+    print(f"  Speedup: {avg_miss/avg_hit if avg_hit > 0 else 0:.1f}x faster with cache")
 
 
 if __name__ == "__main__":
