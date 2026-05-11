@@ -4,43 +4,50 @@
 
 use("medical_db");
 
-// ─── 4.1 : Créer les index appropriés ────────────────────────────────────────
+// Create appropriate indexes
 
-// Index 1 : Recherche fréquente par wilaya + antécédents
-// TODO: Créer l'index composé approprié
-// db.patients.createIndex({ ... });
+// Index 1: Frequent search by region + antecedents
+db.patients.createIndex({ "adresse.wilaya": 1, antecedents: 1 });
 
-// Index 2 : Recherche par date de consultation
-// TODO:
-// db.patients.createIndex({ ... });
+// Index 2: Search by consultation date
+db.patients.createIndex({ "consultations.date": 1 });
 
-// Index 3 : Texte sur diagnostics pour recherche full-text
-// TODO:
-// db.patients.createIndex({ ... });
+// Index 3: Text index on diagnoses for full-text search
+db.patients.createIndex({ "consultations.diagnostic": "text" });
 
-// Index 4 : Analyses par patient (lookup)
-// TODO:
-// db.analyses.createIndex({ ... });
+// Index 4: Patient lookup for analyses
+db.analyses.createIndex({ patient_id: 1 });
 
 
-// ─── 4.2 : Comparer avec explain() ────────────────────────────────────────────
+// Compare query performance with explain()
 
-// Requête de test
 const requeteTest = {
   "adresse.wilaya": "Alger",
   antecedents: "Diabète type 2"
 };
 
-print("=== AVANT index ===");
-// TODO: Exécuter avec explain("executionStats") et afficher les métriques
+print("=== BEFORE index (using COLLSCAN) ===");
+const beforeIndex = db.patients.find(requeteTest).explain("executionStats");
+print("Docs returned:", beforeIndex.executionStats.nReturned);
+print("Docs examined:", beforeIndex.executionStats.totalDocsExamined);
+print("Execution time (ms):", beforeIndex.executionStats.executionStages.executionTimeMillis);
 
-print("\n=== APRÈS index ===");
-// TODO: Après création de l'index, même requête avec explain()
-// Comparer : nReturned, totalDocsExamined, executionTimeMillis
+print("\n=== AFTER index (using IXSCAN) ===");
+const afterIndex = db.patients.find(requeteTest).explain("executionStats");
+print("Docs returned:", afterIndex.executionStats.nReturned);
+print("Docs examined:", afterIndex.executionStats.totalDocsExamined);
+print("Execution time (ms):", afterIndex.executionStats.executionStages.executionTimeMillis);
 
-// ─── 4.4 : Index TTL pour archivage ───────────────────────────────────────────
-// TODO: Créer un index TTL sur analyses.date pour expirer après 5 ans
-// db.analyses.createIndex(
-//   { date: 1 },
-//   { expireAfterSeconds: ??? }
-// );
+// Compound index for most complex query
+print("\n=== Compound index explanation ===");
+print("Index on (adresse.wilaya, antecedents) allows:");
+print("- Fast filtering by region first");
+print("- Then filtering by antecedents within that region");
+print("- Avoids scanning all documents (COLLSCAN)");
+
+// TTL index for analysis archival (5 years)
+db.analyses.createIndex(
+  { date: 1 },
+  { expireAfterSeconds: 157680000 }  // 5 years in seconds
+);
+print("\nTTL index created: Analyses older than 5 years will auto-expire");
